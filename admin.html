@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quản trị thư viện</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f5f7fa; }
+    .topbar { background: #1f3a5f; color: #fff; padding: 1rem; }
+    .topbar h1 { font-size: 1.3rem; font-weight: 700; margin: 0; }
+    .book-row { cursor: pointer; border: 0; border-radius: .75rem; box-shadow: 0 2px 8px rgba(0,0,0,.07); transition: transform .08s; }
+    .book-row:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+    .book-title { font-weight: 600; }
+    .meta { font-size: .9rem; color: #5b6573; }
+    .login-box { max-width: 380px; margin: 12vh auto 0; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== Login (local demo only) ===== -->
+  <div id="login-view" class="container">
+    <div class="card login-box shadow-sm border-0">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-1">Đăng nhập quản trị</h1>
+        <p class="text-muted small mb-3">Dành cho thủ thư</p>
+        <form id="login-form">
+          <div class="mb-3">
+            <label class="form-label" for="login-user">Tên đăng nhập</label>
+            <input id="login-user" class="form-control" autocomplete="username" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="login-pass">Mật khẩu</label>
+            <input id="login-pass" type="password" class="form-control" autocomplete="current-password" required>
+          </div>
+          <div id="login-error" class="text-danger small mb-2 d-none">Sai tên đăng nhập hoặc mật khẩu.</div>
+          <button class="btn btn-primary w-100" type="submit">Đăng nhập</button>
+        </form>
+        <a href="index.html" class="d-block text-center mt-3 small">← Về trang chủ</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Admin ===== -->
+  <div id="admin-view" class="d-none">
+    <header class="topbar">
+      <div class="container d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h1 id="school-name">Thư viện trường</h1>
+        <div class="d-flex gap-2">
+          <a href="index.html" class="btn btn-outline-light btn-sm">Xem trang chủ</a>
+          <button id="logout-btn" class="btn btn-light btn-sm">Đăng xuất</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container py-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">Danh sách sách</h2>
+        <button id="add-btn" class="btn btn-primary">+ Thêm sách</button>
+      </div>
+      <div id="book-list" class="d-flex flex-column gap-2"></div>
+      <p id="empty" class="text-center text-muted mt-4 d-none">Chưa có sách nào.</p>
+    </main>
+  </div>
+
+  <!-- ===== Edit form (popup) ===== -->
+  <div class="modal fade" id="book-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <form class="modal-content" id="book-form">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modal-title">Sửa sách</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="f-name">Tên sách</label>
+            <input id="f-name" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="f-copies">Số cuốn còn lại</label>
+            <input id="f-copies" type="number" min="0" step="1" class="form-control" required>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0">Học sinh đang mượn</label>
+            <button type="button" id="add-borrower" class="btn btn-outline-secondary btn-sm">+ Thêm</button>
+          </div>
+          <div id="borrowers" class="d-flex flex-column gap-2"></div>
+          <p id="no-borrowers" class="text-muted small mb-0">Chưa có ai mượn.</p>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" id="delete-btn" class="btn btn-outline-danger">Xóa sách</button>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+            <button type="submit" class="btn btn-primary">Lưu</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="data.js"></script>
+  <script>
+    // ---- Temporary local login. NOT real security: anyone can read this file. ----
+    // Replace with Firebase Authentication when going online.
+    const LOCAL_ADMIN = { username: "admin", password: "admin123" };
+    const SESSION_KEY = "library_admin_session";
+
+    const loginView = document.getElementById("login-view");
+    const adminView = document.getElementById("admin-view");
+    const listEl = document.getElementById("book-list");
+    const emptyEl = document.getElementById("empty");
+    const modalEl = document.getElementById("book-modal");
+    const modal = new bootstrap.Modal(modalEl);
+    const borrowersEl = document.getElementById("borrowers");
+    const noBorrowersEl = document.getElementById("no-borrowers");
+
+    let books = [];
+    let editingId = null; // null = adding a new book
+
+    // ---------- Login ----------
+    function isLoggedIn() {
+      try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch (e) { return false; }
+    }
+
+    function showCorrectView() {
+      const ok = isLoggedIn();
+      loginView.classList.toggle("d-none", ok);
+      adminView.classList.toggle("d-none", !ok);
+      if (ok) refresh();
+    }
+
+    document.getElementById("login-form").addEventListener("submit", e => {
+      e.preventDefault();
+      const u = document.getElementById("login-user").value.trim();
+      const p = document.getElementById("login-pass").value;
+      if (u === LOCAL_ADMIN.username && p === LOCAL_ADMIN.password) {
+        sessionStorage.setItem(SESSION_KEY, "1");
+        document.getElementById("login-error").classList.add("d-none");
+        showCorrectView();
+      } else {
+        document.getElementById("login-error").classList.remove("d-none");
+      }
+    });
+
+    document.getElementById("logout-btn").addEventListener("click", () => {
+      sessionStorage.removeItem(SESSION_KEY);
+      showCorrectView();
+    });
+
+    // ---------- Book list ----------
+    async function refresh() {
+      document.title = "Quản trị - " + SCHOOL_NAME;
+      document.getElementById("school-name").textContent = SCHOOL_NAME;
+      books = await loadBooks();
+      renderList();
+    }
+
+    function renderList() {
+      listEl.innerHTML = books.map(b => {
+        const badge = b.copies > 0
+          ? '<span class="badge text-bg-success">Còn sách</span>'
+          : '<span class="badge text-bg-secondary">Hết sách</span>';
+        const n = (b.borrowers || []).length;
+        return `
+          <div class="card book-row" data-id="${escapeHtml(b.id)}">
+            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div>
+                <div class="book-title">${escapeHtml(b.name)}</div>
+                <div class="meta">Còn ${b.copies} cuốn · ${n} học sinh đang mượn</div>
+              </div>
+              ${badge}
+            </div>
+          </div>`;
+      }).join("");
+      emptyEl.classList.toggle("d-none", books.length > 0);
+    }
+
+    listEl.addEventListener("click", e => {
+      const row = e.target.closest(".book-row");
+      if (row) openForm(row.dataset.id);
+    });
+
+    document.getElementById("add-btn").addEventListener("click", () => openForm(null));
+
+    // ---------- Edit form ----------
+    function borrowerRowHtml(br) {
+      return `
+        <div class="border rounded p-2 borrower-row">
+          <div class="row g-2">
+            <div class="col-12 col-sm-5">
+              <input class="form-control form-control-sm b-name" placeholder="Họ tên" value="${escapeHtml(br.name)}">
+            </div>
+            <div class="col-5 col-sm-2">
+              <input class="form-control form-control-sm b-class" placeholder="Lớp" value="${escapeHtml(br.class)}">
+            </div>
+            <div class="col-5 col-sm-4">
+              <input type="date" class="form-control form-control-sm b-due" value="${escapeHtml(br.due)}" title="Hạn trả">
+            </div>
+            <div class="col-2 col-sm-1 d-grid">
+              <button type="button" class="btn btn-outline-danger btn-sm remove-borrower" title="Xóa">×</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function updateNoBorrowers() {
+      noBorrowersEl.classList.toggle("d-none", borrowersEl.children.length > 0);
+    }
+
+    function openForm(id) {
+      editingId = id;
+      const book = id ? books.find(b => b.id === id) : { name: "", copies: 1, borrowers: [] };
+      document.getElementById("modal-title").textContent = id ? "Sửa sách" : "Thêm sách";
+      document.getElementById("delete-btn").classList.toggle("d-none", !id);
+      document.getElementById("f-name").value = book.name;
+      document.getElementById("f-copies").value = book.copies;
+      borrowersEl.innerHTML = (book.borrowers || []).map(borrowerRowHtml).join("");
+      updateNoBorrowers();
+      modal.show();
+    }
+
+    document.getElementById("add-borrower").addEventListener("click", () => {
+      borrowersEl.insertAdjacentHTML("beforeend", borrowerRowHtml({ name: "", class: "", due: "" }));
+      updateNoBorrowers();
+    });
+
+    borrowersEl.addEventListener("click", e => {
+      const btn = e.target.closest(".remove-borrower");
+      if (btn) {
+        btn.closest(".borrower-row").remove();
+        updateNoBorrowers();
+      }
+    });
+
+    document.getElementById("book-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const name = document.getElementById("f-name").value.trim();
+      const copies = parseInt(document.getElementById("f-copies").value, 10);
+      if (!name || isNaN(copies) || copies < 0) return;
+
+      const borrowers = [...borrowersEl.querySelectorAll(".borrower-row")]
+        .map(row => ({
+          name: row.querySelector(".b-name").value.trim(),
+          class: row.querySelector(".b-class").value.trim(),
+          due: row.querySelector(".b-due").value
+        }))
+        .filter(b => b.name || b.class || b.due); // skip fully empty rows
+
+      if (editingId) {
+        const book = books.find(b => b.id === editingId);
+        Object.assign(book, { name, copies, borrowers });
+      } else {
+        books.push({ id: newBookId(), name, copies, borrowers });
+      }
+      await saveBooks(books);
+      renderList();
+      modal.hide();
+    });
+
+    document.getElementById("delete-btn").addEventListener("click", async () => {
+      if (!editingId) return;
+      if (!confirm("Xóa sách này?")) return;
+      books = books.filter(b => b.id !== editingId);
+      await saveBooks(books);
+      renderList();
+      modal.hide();
+    });
+
+    showCorrectView();
+  </script>
+</body>
+</html>
