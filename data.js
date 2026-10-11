@@ -2,8 +2,9 @@
 // Everything is stored in the browser (localStorage) for now.
 // Later, replace loadBooks() and saveBooks() with Firestore calls; the pages don't need to change.
 
-const SCHOOL_NAME = "Thư viện Nguyễn Thượng Hiền";
+const DEFAULT_SCHOOL_NAME = "Thư viện Nguyễn Thượng Hiền";
 const STORAGE_KEY = "library_books_v1";
+const SCHOOL_KEY = "library_school_name_v1";
 
 // Book shape: { id, name, copies, borrowers: [{ name, class, due }] }
 // "Còn sách" (available) simply means copies > 0.
@@ -34,6 +35,18 @@ async function loadBooks() {
 
 async function saveBooks(books) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
+}
+
+async function loadSchoolName() {
+  try {
+    const name = localStorage.getItem(SCHOOL_KEY);
+    if (name) return name;
+  } catch (e) { /* use default */ }
+  return DEFAULT_SCHOOL_NAME;
+}
+
+async function saveSchoolName(name) {
+  localStorage.setItem(SCHOOL_KEY, name);
 }
 
 function newBookId() {

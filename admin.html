@@ -47,6 +47,7 @@
       <div class="container d-flex flex-wrap justify-content-between align-items-center gap-2">
         <h1 id="school-name">Thư viện trường</h1>
         <div class="d-flex gap-2">
+          <a href="profile.html" class="btn btn-outline-light btn-sm">Hồ sơ</a>
           <a href="index.html" class="btn btn-outline-light btn-sm">Xem trang chủ</a>
           <button id="logout-btn" class="btn btn-light btn-sm">Đăng xuất</button>
         </div>
@@ -150,8 +151,9 @@
 
     // ---------- Book list ----------
     async function refresh() {
-      document.title = "Quản trị - " + SCHOOL_NAME;
-      document.getElementById("school-name").textContent = SCHOOL_NAME;
+      const schoolName = await loadSchoolName();
+      document.title = "Quản trị - " + schoolName;
+      document.getElementById("school-name").textContent = schoolName;
       books = await loadBooks();
       renderList();
     }
