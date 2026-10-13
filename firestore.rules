@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The first librarian (owner). Paste the UID you already used before.
+    // Firebase console -> Authentication -> Users -> User UID.
+    function isOwner() {
+      return request.auth != null && request.auth.uid in ['FILL_UID_HERE'];
+    }
+
+    // Owner, or anyone added from the profile page (listed in the admins collection).
+    function isAdmin() {
+      return isOwner()
+        || (request.auth != null
+            && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    match /books/{id}     { allow read: if true; allow write: if isAdmin(); }
+    match /meta/{id}      { allow read: if true; allow write: if isAdmin(); }
+
+    // Student names, classes and due dates: librarians only.
+    match /borrowers/{id} { allow read, write: if isAdmin(); }
+
+    // List of librarians: librarians only.
+    match /admins/{uid}   { allow read, write: if isAdmin(); }
+  }
+}

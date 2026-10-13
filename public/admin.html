@@ -18,7 +18,7 @@
 </head>
 <body>
 
-  <!-- ===== Login (local demo only) ===== -->
+  <!-- ===== Login (Firebase Authentication) ===== -->
   <div id="login-view" class="container">
     <div class="card login-box shadow-sm border-0">
       <div class="card-body p-4">
@@ -26,14 +26,14 @@
         <p class="text-muted small mb-3">Dành cho thủ thư</p>
         <form id="login-form">
           <div class="mb-3">
-            <label class="form-label" for="login-user">Tên đăng nhập</label>
-            <input id="login-user" class="form-control" autocomplete="username" required>
+            <label class="form-label" for="login-user">Email</label>
+            <input id="login-user" type="email" class="form-control" autocomplete="username" required>
           </div>
           <div class="mb-3">
             <label class="form-label" for="login-pass">Mật khẩu</label>
             <input id="login-pass" type="password" class="form-control" autocomplete="current-password" required>
           </div>
-          <div id="login-error" class="text-danger small mb-2 d-none">Sai tên đăng nhập hoặc mật khẩu.</div>
+          <div id="login-error" class="text-danger small mb-2 d-none">Sai email hoặc mật khẩu.</div>
           <button class="btn btn-primary w-100" type="submit">Đăng nhập</button>
         </form>
         <a href="index.html" class="d-block text-center mt-3 small">← Về trang chủ</a>
@@ -102,10 +102,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="data.js"></script>
   <script>
-    // ---- Temporary local login. NOT real security: anyone can read this file. ----
-    // Replace with Firebase Authentication when going online.
-    const LOCAL_ADMIN = { username: "admin", password: "admin123" };
-    const SESSION_KEY = "library_admin_session";
+    // Login uses Firebase Authentication (see data.js). Only the librarian account can write.
 
     const loginView = document.getElementById("login-view");
     const adminView = document.getElementById("admin-view");
@@ -120,33 +117,28 @@
     let editingId = null; // null = adding a new book
 
     // ---------- Login ----------
-    function isLoggedIn() {
-      try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch (e) { return false; }
+    function showView(loggedIn) {
+      loginView.classList.toggle("d-none", loggedIn);
+      adminView.classList.toggle("d-none", !loggedIn);
+      if (loggedIn) refresh();
     }
 
-    function showCorrectView() {
-      const ok = isLoggedIn();
-      loginView.classList.toggle("d-none", ok);
-      adminView.classList.toggle("d-none", !ok);
-      if (ok) refresh();
-    }
+    firebaseReady.then(({ auth }) => {
+      auth.onAuthStateChanged(user => showView(!!user));
 
-    document.getElementById("login-form").addEventListener("submit", e => {
-      e.preventDefault();
-      const u = document.getElementById("login-user").value.trim();
-      const p = document.getElementById("login-pass").value;
-      if (u === LOCAL_ADMIN.username && p === LOCAL_ADMIN.password) {
-        sessionStorage.setItem(SESSION_KEY, "1");
-        document.getElementById("login-error").classList.add("d-none");
-        showCorrectView();
-      } else {
-        document.getElementById("login-error").classList.remove("d-none");
-      }
-    });
+      document.getElementById("login-form").addEventListener("submit", async e => {
+        e.preventDefault();
+        const email = document.getElementById("login-user").value.trim();
+        const pass = document.getElementById("login-pass").value;
+        try {
+          await auth.signInWithEmailAndPassword(email, pass);
+          document.getElementById("login-error").classList.add("d-none");
+        } catch (err) {
+          document.getElementById("login-error").classList.remove("d-none");
+        }
+      });
 
-    document.getElementById("logout-btn").addEventListener("click", () => {
-      sessionStorage.removeItem(SESSION_KEY);
-      showCorrectView();
+      document.getElementById("logout-btn").addEventListener("click", () => auth.signOut());
     });
 
     // ---------- Book list ----------
@@ -249,13 +241,17 @@
         }))
         .filter(b => b.name || b.class || b.due); // skip fully empty rows
 
-      if (editingId) {
-        const book = books.find(b => b.id === editingId);
-        Object.assign(book, { name, copies, borrowers });
-      } else {
-        books.push({ id: newBookId(), name, copies, borrowers });
+      const book = editingId
+        ? { ...books.find(b => b.id === editingId), name, copies, borrowers }
+        : { id: newBookId(), name, copies, borrowers };
+      try {
+        await saveBook(book);
+      } catch (err) {
+        alert("Không lưu được: " + err.message);
+        return;
       }
-      await saveBooks(books);
+      const i = books.findIndex(b => b.id === book.id);
+      if (i >= 0) books[i] = book; else books.push(book);
       renderList();
       modal.hide();
     });
@@ -263,13 +259,17 @@
     document.getElementById("delete-btn").addEventListener("click", async () => {
       if (!editingId) return;
       if (!confirm("Xóa sách này?")) return;
+      try {
+        await deleteBook(editingId);
+      } catch (err) {
+        alert("Không xóa được: " + err.message);
+        return;
+      }
       books = books.filter(b => b.id !== editingId);
-      await saveBooks(books);
       renderList();
       modal.hide();
     });
 
-    showCorrectView();
   </script>
 </body>
 </html>
