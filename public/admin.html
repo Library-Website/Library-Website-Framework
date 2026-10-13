@@ -14,6 +14,7 @@
     .book-title { font-weight: 600; }
     .meta { font-size: .9rem; color: #5b6573; }
     .login-box { max-width: 380px; margin: 12vh auto 0; }
+    .copies-table { font-size: .85rem; }
   </style>
 </head>
 <body>
@@ -57,19 +58,72 @@
     <main class="container py-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="h5 mb-0">Danh sách sách</h2>
-        <button id="add-btn" class="btn btn-primary">+ Thêm sách</button>
+        <div class="d-flex gap-2">
+          <button id="import-btn" class="btn btn-outline-primary">Nhập từ Excel</button>
+          <button id="add-btn" class="btn btn-primary">+ Thêm sách</button>
+        </div>
+        <input id="import-file" type="file" accept=".xlsx,.xls" class="d-none">
       </div>
       <div id="book-list" class="d-flex flex-column gap-2"></div>
       <p id="empty" class="text-center text-muted mt-4 d-none">Chưa có sách nào.</p>
     </main>
   </div>
 
+  <!-- ===== Add form (popup): one copy per submission ===== -->
+  <div class="modal fade" id="add-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <form class="modal-content" id="add-form">
+        <div class="modal-header">
+          <h5 class="modal-title">Thêm sách</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="a-barcode">Mã vạch <span class="text-danger">*</span></label>
+            <input id="a-barcode" class="form-control font-monospace" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="a-title">Tựa đề <span class="text-danger">*</span></label>
+            <input id="a-title" class="form-control" required>
+            <div class="form-text">Nếu đã có sách cùng tựa đề, bản này sẽ được thêm vào sách đó.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="a-reg">Số ĐKCB</label>
+            <input id="a-reg" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="a-author">Tác giả</label>
+            <input id="a-author" class="form-control">
+          </div>
+          <div class="row g-2">
+            <div class="col-12 col-sm-6 mb-3">
+              <label class="form-label" for="a-publisher">Nhà XB</label>
+              <input id="a-publisher" class="form-control">
+            </div>
+            <div class="col-6 col-sm-3 mb-3">
+              <label class="form-label" for="a-year">Năm XB</label>
+              <input id="a-year" class="form-control">
+            </div>
+            <div class="col-6 col-sm-3 mb-3">
+              <label class="form-label" for="a-category">Phân loại</label>
+              <input id="a-category" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-primary">Thêm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ===== Edit form (popup) ===== -->
   <div class="modal fade" id="book-modal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
       <form class="modal-content" id="book-form">
         <div class="modal-header">
-          <h5 class="modal-title" id="modal-title">Sửa sách</h5>
+          <h5 class="modal-title">Sửa sách</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
         </div>
         <div class="modal-body">
@@ -77,10 +131,33 @@
             <label class="form-label" for="f-name">Tên sách</label>
             <input id="f-name" class="form-control" required>
           </div>
-          <div class="mb-3">
-            <label class="form-label" for="f-copies">Số cuốn còn lại</label>
-            <input id="f-copies" type="number" min="0" step="1" class="form-control" required>
+
+          <div class="d-flex flex-wrap gap-4 align-items-center mb-2">
+            <div>Còn lại: <strong id="copies-left">0</strong> cuốn <span class="text-muted small">(tự tính: tổng − đang mượn)</span></div>
+            <div>Tổng số cuốn: <strong id="copies-total">0</strong></div>
+            <button type="button" id="edit-copies-btn" class="btn btn-outline-secondary btn-sm">Sửa tổng số cuốn</button>
           </div>
+
+          <div id="copies-panel" class="border rounded p-2 mb-3 d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="small text-muted">Chọn các bản muốn xóa, rồi bấm "Xóa các bản đã chọn". Thay đổi chỉ được lưu khi bấm "Lưu".</span>
+              <button type="button" id="delete-copies-btn" class="btn btn-danger btn-sm">Xóa các bản đã chọn</button>
+            </div>
+            <div class="table-responsive" style="max-height: 280px;">
+              <table class="table table-sm table-hover align-middle mb-0 copies-table">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:2rem"><input type="checkbox" id="copies-all" class="form-check-input" title="Chọn tất cả"></th>
+                    <th>Mã vạch</th><th>Số ĐKCB</th><th>Tác giả</th><th>Nhà XB</th><th>Năm XB</th><th>Phân loại</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="copies-body"></tbody>
+              </table>
+            </div>
+            <p id="copies-empty" class="text-muted small mt-2 mb-0 d-none">Sách này không còn bản nào.</p>
+          </div>
+
+          <datalist id="barcode-options"></datalist>
           <div class="d-flex justify-content-between align-items-center mb-2">
             <label class="form-label mb-0">Học sinh đang mượn</label>
             <button type="button" id="add-borrower" class="btn btn-outline-secondary btn-sm">+ Thêm</button>
@@ -108,13 +185,19 @@
     const adminView = document.getElementById("admin-view");
     const listEl = document.getElementById("book-list");
     const emptyEl = document.getElementById("empty");
-    const modalEl = document.getElementById("book-modal");
-    const modal = new bootstrap.Modal(modalEl);
+    const modal = new bootstrap.Modal(document.getElementById("book-modal"));
+    const addModal = new bootstrap.Modal(document.getElementById("add-modal"));
     const borrowersEl = document.getElementById("borrowers");
     const noBorrowersEl = document.getElementById("no-borrowers");
+    const copiesPanel = document.getElementById("copies-panel");
+    const copiesBody = document.getElementById("copies-body");
 
     let books = [];
-    let editingId = null; // null = adding a new book
+    let editingId = null;
+    // Working copy of the copies of the book being edited; only saved when the librarian presses "Lưu".
+    let draft = { barcodes: [], details: {}, legacyCopies: 0 };
+
+    const normTitle = s => String(s).replace(/\s+/g, " ").trim().normalize("NFC").toLowerCase();
 
     // ---------- Login ----------
     function showView(loggedIn) {
@@ -150,9 +233,15 @@
       renderList();
     }
 
+    function totalCopies(b) {
+      const n = (b.barcodes || []).length;
+      return n || b.copies;
+    }
+
     function renderList() {
       listEl.innerHTML = books.map(b => {
-        const badge = b.copies > 0
+        const left = copiesLeft(b);
+        const badge = left > 0
           ? '<span class="badge text-bg-success">Còn sách</span>'
           : '<span class="badge text-bg-secondary">Hết sách</span>';
         const n = (b.borrowers || []).length;
@@ -161,7 +250,7 @@
             <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
               <div>
                 <div class="book-title">${escapeHtml(b.name)}</div>
-                <div class="meta">Còn ${b.copies} cuốn · ${n} học sinh đang mượn</div>
+                <div class="meta">Còn ${left} / ${totalCopies(b)} cuốn · ${n} học sinh đang mượn</div>
               </div>
               ${badge}
             </div>
@@ -175,47 +264,198 @@
       if (row) openForm(row.dataset.id);
     });
 
-    document.getElementById("add-btn").addEventListener("click", () => openForm(null));
+    // ---------- Excel import ----------
+    const importFile = document.getElementById("import-file");
+    document.getElementById("import-btn").addEventListener("click", () => importFile.click());
+    importFile.addEventListener("change", async () => {
+      const file = importFile.files[0];
+      importFile.value = "";
+      if (!file) return;
+      try {
+        const r = await importBooksFromExcel(file);
+        alert(`Xong: thêm ${r.added} sách mới, cập nhật ${r.updated} sách, bỏ qua ${r.skipped} mã vạch đã có.`);
+        refresh();
+      } catch (err) {
+        alert("Không nhập được: " + err.message);
+      }
+    });
+
+    // ---------- Add (manual): one copy per submission ----------
+    document.getElementById("add-btn").addEventListener("click", () => {
+      document.getElementById("add-form").reset();
+      addModal.show();
+    });
+
+    document.getElementById("add-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const clean = id => document.getElementById(id).value.replace(/\s+/g, " ").trim().normalize("NFC");
+      const code = clean("a-barcode");
+      const title = clean("a-title");
+      if (!code || !title) return;
+
+      const info = {
+        reg: clean("a-reg"),
+        author: clean("a-author"),
+        publisher: clean("a-publisher"),
+        year: clean("a-year"),
+        category: clean("a-category")
+      };
+      if (/^\d{1,2}$/.test(info.category)) info.category = info.category.padStart(3, "0");
+      const details = Object.fromEntries(Object.entries(info).filter(([, v]) => v));
+
+      const submitBtn = e.submitter;
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        // Reload so the check runs against what is really in Firestore right now.
+        books = await loadBooks();
+
+        const owner = books.find(b => (b.barcodes || []).includes(code));
+        if (owner) {
+          alert("Mã vạch " + code + " đã thuộc về sách \"" + owner.name + "\".");
+          return;
+        }
+
+        let book = books.find(b => normTitle(b.name) === normTitle(title));
+        const isNew = !book;
+        if (isNew) {
+          book = { id: newBookId(), name: title, copies: 0, barcodes: [], borrowers: [], details: {} };
+          books.push(book);
+        }
+        book.barcodes = [...(book.barcodes || []), code];
+        book.details = { ...(book.details || {}), [code]: details };
+        book.copies = copiesLeft(book);
+
+        await saveBook(book);
+        books.sort((a, b) => a.name.localeCompare(b.name, "vi"));
+        renderList();
+        addModal.hide();
+        if (!isNew) alert("Đã thêm vào sách có sẵn \"" + book.name + "\".");
+      } catch (err) {
+        alert("Không lưu được: " + err.message);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
 
     // ---------- Edit form ----------
     function borrowerRowHtml(br) {
       return `
         <div class="border rounded p-2 borrower-row">
           <div class="row g-2">
-            <div class="col-12 col-sm-5">
+            <div class="col-12 col-sm-6">
               <input class="form-control form-control-sm b-name" placeholder="Họ tên" value="${escapeHtml(br.name)}">
             </div>
-            <div class="col-5 col-sm-2">
+            <div class="col-6 col-sm-2">
               <input class="form-control form-control-sm b-class" placeholder="Lớp" value="${escapeHtml(br.class)}">
             </div>
-            <div class="col-5 col-sm-4">
-              <input type="date" class="form-control form-control-sm b-due" value="${escapeHtml(br.due)}" title="Hạn trả">
+            <div class="col-6 col-sm-4">
+              <input class="form-control form-control-sm b-barcode" list="barcode-options" placeholder="Mã vạch (không bắt buộc)" value="${escapeHtml(br.barcode || "")}">
             </div>
-            <div class="col-2 col-sm-1 d-grid">
+            <div class="col-6 col-sm-5">
+              <label class="form-text m-0">Ngày mượn</label>
+              <input type="date" class="form-control form-control-sm b-borrowed" value="${escapeHtml(br.borrowed || "")}">
+            </div>
+            <div class="col-6 col-sm-5">
+              <label class="form-text m-0">Hạn trả</label>
+              <input type="date" class="form-control form-control-sm b-due" value="${escapeHtml(br.due || "")}">
+            </div>
+            <div class="col-12 col-sm-2 d-grid align-items-end">
               <button type="button" class="btn btn-outline-danger btn-sm remove-borrower" title="Xóa">×</button>
             </div>
           </div>
         </div>`;
     }
 
+    function borrowedBarcodes() {
+      return new Set([...borrowersEl.querySelectorAll(".b-barcode")].map(i => i.value.trim()).filter(Boolean));
+    }
+
     function updateNoBorrowers() {
       noBorrowersEl.classList.toggle("d-none", borrowersEl.children.length > 0);
+      updateCopies();
+      renderCopiesTable();
+    }
+
+    // "Copies left" is always calculated: total copies minus students currently borrowing.
+    function updateCopies() {
+      const n = draft.barcodes.length;
+      const total = n || draft.legacyCopies;
+      const left = n ? Math.max(0, n - borrowersEl.children.length) : draft.legacyCopies;
+      document.getElementById("copies-total").textContent = total;
+      document.getElementById("copies-left").textContent = left;
+      document.getElementById("barcode-options").innerHTML =
+        draft.barcodes.map(c => `<option value="${escapeHtml(c)}"></option>`).join("");
+      // No more borrowers than copies.
+      const full = borrowersEl.children.length >= draft.barcodes.length;
+      const addBtn = document.getElementById("add-borrower");
+      addBtn.disabled = full;
+      addBtn.title = full ? "Đã hết bản để cho mượn" : "";
+    }
+
+    function renderCopiesTable() {
+      const borrowed = borrowedBarcodes();
+      copiesBody.innerHTML = draft.barcodes.map(code => {
+        const d = draft.details[code] || {};
+        const out = borrowed.has(code);
+        return `
+          <tr>
+            <td><input type="checkbox" class="form-check-input copy-check" value="${escapeHtml(code)}" ${out ? "disabled" : ""}></td>
+            <td class="font-monospace">${escapeHtml(code)}</td>
+            <td>${escapeHtml(d.reg || "")}</td>
+            <td>${escapeHtml(d.author || "")}</td>
+            <td>${escapeHtml(d.publisher || "")}</td>
+            <td>${escapeHtml(d.year || "")}</td>
+            <td>${escapeHtml(d.category || "")}</td>
+            <td>${out ? '<span class="badge text-bg-warning">đang được mượn</span>' : ""}</td>
+          </tr>`;
+      }).join("");
+      document.getElementById("copies-empty").classList.toggle("d-none", draft.barcodes.length > 0);
+      document.getElementById("copies-all").checked = false;
     }
 
     function openForm(id) {
       editingId = id;
-      const book = id ? books.find(b => b.id === id) : { name: "", copies: 1, borrowers: [] };
-      document.getElementById("modal-title").textContent = id ? "Sửa sách" : "Thêm sách";
-      document.getElementById("delete-btn").classList.toggle("d-none", !id);
+      const book = books.find(b => b.id === id);
+      draft = {
+        barcodes: [...(book.barcodes || [])],
+        details: { ...(book.details || {}) },
+        legacyCopies: book.copies || 0 // only used by old books that have no barcodes
+      };
       document.getElementById("f-name").value = book.name;
-      document.getElementById("f-copies").value = book.copies;
+      copiesPanel.classList.add("d-none");
       borrowersEl.innerHTML = (book.borrowers || []).map(borrowerRowHtml).join("");
       updateNoBorrowers();
       modal.show();
     }
 
+    document.getElementById("edit-copies-btn").addEventListener("click", () => {
+      copiesPanel.classList.toggle("d-none");
+    });
+
+    document.getElementById("copies-all").addEventListener("change", e => {
+      copiesBody.querySelectorAll(".copy-check:not(:disabled)").forEach(c => { c.checked = e.target.checked; });
+    });
+
+    document.getElementById("delete-copies-btn").addEventListener("click", () => {
+      const codes = [...copiesBody.querySelectorAll(".copy-check:checked")].map(c => c.value);
+      if (!codes.length) return alert("Hãy chọn ít nhất một bản để xóa.");
+      const removesAll = codes.length === draft.barcodes.length;
+      if (!confirm("Xóa " + codes.length + " bản đã chọn?" +
+          (removesAll ? "\nĐây là tất cả các bản, nên sách sẽ bị xóa khi bạn bấm Lưu." : ""))) return;
+      draft.barcodes = draft.barcodes.filter(c => !codes.includes(c));
+      codes.forEach(c => delete draft.details[c]);
+      if (!draft.barcodes.length) draft.legacyCopies = 0;
+      updateCopies();
+      renderCopiesTable();
+    });
+
     document.getElementById("add-borrower").addEventListener("click", () => {
-      borrowersEl.insertAdjacentHTML("beforeend", borrowerRowHtml({ name: "", class: "", due: "" }));
+      if (borrowersEl.children.length >= draft.barcodes.length) {
+        return alert("Số học sinh mượn không được vượt quá tổng số cuốn (" + draft.barcodes.length + ").");
+      }
+      // The borrow date starts as today.
+      borrowersEl.insertAdjacentHTML("beforeend",
+        borrowerRowHtml({ name: "", class: "", barcode: "", borrowed: todayStr(), due: "" }));
       updateNoBorrowers();
     });
 
@@ -226,24 +466,66 @@
         updateNoBorrowers();
       }
     });
+    borrowersEl.addEventListener("change", e => {
+      if (e.target.classList.contains("b-barcode")) renderCopiesTable();
+    });
 
     document.getElementById("book-form").addEventListener("submit", async e => {
       e.preventDefault();
       const name = document.getElementById("f-name").value.trim();
-      const copies = parseInt(document.getElementById("f-copies").value, 10);
-      if (!name || isNaN(copies) || copies < 0) return;
+      if (!name) return;
 
       const borrowers = [...borrowersEl.querySelectorAll(".borrower-row")]
         .map(row => ({
           name: row.querySelector(".b-name").value.trim(),
           class: row.querySelector(".b-class").value.trim(),
+          barcode: row.querySelector(".b-barcode").value.trim(),
+          borrowed: row.querySelector(".b-borrowed").value,
           due: row.querySelector(".b-due").value
         }))
-        .filter(b => b.name || b.class || b.due); // skip fully empty rows
+        .filter(b => b.name || b.class || b.barcode || b.due); // skip empty rows (the default borrow date alone doesn't count)
 
-      const book = editingId
-        ? { ...books.find(b => b.id === editingId), name, copies, borrowers }
-        : { id: newBookId(), name, copies, borrowers };
+      // Borrowing rules: no more borrowers than copies. When a barcode is typed, it must be a real copy
+      // of THIS book and can only be borrowed by one student at a time.
+      if (borrowers.length > draft.barcodes.length) {
+        return alert("Có " + borrowers.length + " học sinh đang mượn nhưng sách chỉ có " + draft.barcodes.length + " cuốn.");
+      }
+      const valid = new Set(draft.barcodes);
+      const used = new Set();
+      for (const br of borrowers) {
+        const who = br.name || "(chưa nhập tên)";
+        if (!br.barcode) continue; // the barcode is optional; the checks below only apply when one is typed
+        if (!valid.has(br.barcode)) return alert("Mã vạch " + br.barcode + " (học sinh " + who + ") không thuộc sách này.");
+        if (used.has(br.barcode)) return alert("Mã vạch " + br.barcode + " đang được nhiều hơn một học sinh mượn.");
+        used.add(br.barcode);
+      }
+
+      // A book whose copies were all deleted no longer exists: remove it instead of saving it with 0 copies.
+      // (Old books that never had barcodes are not affected.)
+      const original = books.find(b => b.id === editingId);
+      if (!draft.barcodes.length && (original.barcodes || []).length) {
+        if (!confirm("Đã xóa hết các bản của sách này, sách sẽ bị xóa khỏi thư viện. Tiếp tục?")) return;
+        try {
+          await deleteBook(editingId);
+        } catch (err) {
+          alert("Không xóa được: " + err.message);
+          return;
+        }
+        books = books.filter(b => b.id !== editingId);
+        renderList();
+        modal.hide();
+        return;
+      }
+
+      const book = {
+        ...original,
+        name,
+        barcodes: draft.barcodes,
+        details: draft.details,
+        copies: draft.legacyCopies,
+        borrowers
+      };
+      book.copies = copiesLeft(book);
       try {
         await saveBook(book);
       } catch (err) {
@@ -252,6 +534,7 @@
       }
       const i = books.findIndex(b => b.id === book.id);
       if (i >= 0) books[i] = book; else books.push(book);
+      books.sort((a, b) => a.name.localeCompare(b.name, "vi"));
       renderList();
       modal.hide();
     });
