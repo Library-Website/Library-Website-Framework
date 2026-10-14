@@ -209,7 +209,7 @@ async function saveSchoolName(name) {
   await db.collection("meta").doc("school").set({ name });
 }
 
-// Imports an Excel file (.xlsx/.xls). "Mã vạch" and "Tựa đề" are required; "Số ĐKCB", "Tác giả",
+// Imports an Excel file (.xlsx/.xls). "Mã vạch" and "Tựa đề" are required; "Kí hiệu xếp giá", "Tác giả",
 // "Nhà XB", "Năm XB" and "Phân loại" are read too when present and saved on each copy.
 // The table can start anywhere: the header row is found by searching for those two names.
 // Rows with the same title become one book with several barcodes. Titles that already exist get the
@@ -225,7 +225,7 @@ async function importBooksFromExcel(file) {
   const col = name => rows[h].findIndex(c => norm(c) === name);
   const cCode = col("mã vạch"), cTitle = col("tựa đề");
   // Optional columns: -1 if the file doesn't have them.
-  const cReg = col("số đkcb"), cAuthor = col("tác giả"), cPub = col("nhà xb"), cYear = col("năm xb"), cCat = col("phân loại");
+  const cReg = col("kí hiệu xếp giá"), cAuthor = col("tác giả"), cPub = col("nhà xb"), cYear = col("năm xb"), cCat = col("phân loại");
   const cell = (r, i) => i < 0 ? "" : String(r[i]).replace(/\s+/g, " ").trim().normalize("NFC");
 
   const books = await loadBooks();
