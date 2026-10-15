@@ -5,7 +5,7 @@
 //   meta/school        { name }                 public read, admin write
 //   books/{id}         { name, copies, barcodes: ["STK-14989", ...],    public read, admin write
 //                        details: { "STK-11273": { reg, author, publisher, year, category } } }
-//                        details = per-copy info by barcode: Số ĐKCB, Tác giả, Nhà XB, Năm XB, Phân loại,
+//                        details = per-copy info by barcode: Kí hiệu xếp giá, Tác giả, Nhà XB, Năm XB, Phân loại,
 //                        so copies of the same title can differ (e.g. two editions).
 //   borrowers/{id}     { list: [{name,class,barcode,borrowed,due}] }    admin only (student names stay private)
 //   (barcode = "Mã vạch", optional; borrowed/due are "YYYY-MM-DD")
