@@ -332,7 +332,12 @@ const toBook = (id, d, borrowers) => ({
   borrowers: borrowers || []
 });
 
+// True when the last loadBooks() failed (offline, permission error...). In that case it returns [] but the
+// library is not really empty, so callers that cache the result should not overwrite their cache.
+let booksLoadFailed = false;
+
 async function loadBooks() {
+  booksLoadFailed = false;
   try {
     const { db } = await firebaseReady;
     // The public books are downloaded while we wait for the saved login to be restored,
@@ -394,6 +399,7 @@ async function loadBooks() {
     return books;
   } catch (e) {
     console.error("loadBooks failed", e);
+    booksLoadFailed = true;
     return [];
   }
 }
@@ -539,12 +545,15 @@ async function removeLibrarian(uid) {
 }
 
 // ---------- School name ----------
+let schoolNameLoadFailed = false; // true when the last loadSchoolName() hit an error (it then returns the default)
+
 async function loadSchoolName() {
+  schoolNameLoadFailed = false;
   try {
     const { db } = await firebaseReady;
     const doc = await db.collection("meta").doc("school").get();
     if (doc.exists && doc.data().name) return doc.data().name;
-  } catch (e) { console.error("loadSchoolName failed", e); }
+  } catch (e) { console.error("loadSchoolName failed", e); schoolNameLoadFailed = true; }
   return DEFAULT_SCHOOL_NAME;
 }
 
@@ -611,7 +620,7 @@ async function importBooksFromExcel(file) {
 
     book.barcodes.push(code); // "copies" is recalculated when saving (copiesLeft)
     changed.add(book);
-  }
+   }
 
   // Changed books are placed first-fit into the chunks and written once per chunk.
   Progress.set(0.4, "Đang lưu " + changed.size + " sách...");
