@@ -33,6 +33,97 @@ const HARD_LIMIT = 1000000;
 const CHUNK_PREFIX = "chunk_";
 const TX_CHUNKS = 6; // chunks per transaction (keeps each request well under Firestore's 10 MiB cap)
 
+// ---------- Progress overlay + "only one action at a time" lock ----------
+// runExclusive(fn, { label, button }) runs fn() while:
+//   * a full-screen overlay with a progress bar is shown (after a short delay, so quick actions don't flash),
+//   * every other click / form submit on the page is ignored, so a double click can never run an action twice,
+//   * closing the tab asks for confirmation.
+// While it runs, code can call Progress.set(fraction 0..1, "text") to fill the bar; without it the bar is animated.
+const Progress = (() => {
+  let busy = false, shown = false, timer = null, el = null, bar = null, labelEl = null, pctEl = null, label = "";
+
+  function build() {
+    if (el) return;
+    el = document.createElement("div");
+    el.style.cssText = "position:fixed;inset:0;z-index:3000;background:rgba(15,25,40,.55);display:none;" +
+      "align-items:center;justify-content:center;padding:1rem;cursor:progress;";
+    el.innerHTML =
+      '<div style="background:#fff;border-radius:.75rem;padding:1.5rem;width:100%;max-width:420px;box-shadow:0 10px 30px rgba(0,0,0,.3)">' +
+        '<div class="d-flex justify-content-between mb-2"><strong class="p-label"></strong><span class="p-pct text-muted"></span></div>' +
+        '<div class="progress" style="height:1rem" role="progressbar" aria-label="Tiến độ">' +
+          '<div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>' +
+        '</div>' +
+        '<div class="small text-muted mt-2">Vui lòng đợi, đừng đóng trang.</div>' +
+      '</div>';
+    document.body.appendChild(el);
+    bar = el.querySelector(".progress-bar");
+    labelEl = el.querySelector(".p-label");
+    pctEl = el.querySelector(".p-pct");
+  }
+
+  function show() {
+    build();
+    labelEl.textContent = label;
+    el.style.display = "flex";
+    shown = true;
+  }
+
+  return {
+    get busy() { return busy; },
+    start(text) {
+      busy = true;
+      label = text || "Đang xử lý...";
+      timer = setTimeout(show, 200);
+    },
+    // f = 0..1. Switches the bar from "animated" to a real percentage.
+    set(f, text) {
+      if (!busy) return;
+      if (text) label = text;
+      build();
+      const p = Math.max(0, Math.min(100, Math.round(f * 100)));
+      bar.classList.remove("progress-bar-striped", "progress-bar-animated");
+      bar.style.width = p + "%";
+      pctEl.textContent = p + "%";
+      labelEl.textContent = label;
+    },
+    end() {
+      busy = false;
+      clearTimeout(timer);
+      if (el) {
+        el.style.display = "none";
+        bar.classList.add("progress-bar-striped", "progress-bar-animated");
+        bar.style.width = "100%";
+        pctEl.textContent = "";
+      }
+      shown = false;
+    }
+  };
+})();
+
+// While an action is running, swallow every other click and submit (this is what stops double clicks).
+["click", "submit"].forEach(type => document.addEventListener(type, e => {
+  if (Progress.busy) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true));
+window.addEventListener("beforeunload", e => {
+  if (Progress.busy) { e.preventDefault(); e.returnValue = ""; }
+});
+
+// Runs fn once; if another action is already running, does nothing and returns undefined.
+async function runExclusive(fn, opts = {}) {
+  if (Progress.busy) return;
+  Progress.start(opts.label);
+  if (opts.button) opts.button.disabled = true;
+  try {
+    return await fn();
+  } finally {
+    if (opts.button) opts.button.disabled = false;
+    Progress.end();
+  }
+}
+
+// Lets the browser repaint (so the bar moves during long loops).
+const nextFrame = () => new Promise(r => setTimeout(r, 0));
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
@@ -135,11 +226,12 @@ function placeBook(st, book) {
   return { id, doc, list, target, from };
 }
 
-async function commitOps(db, ops) {
+async function commitOps(db, ops, onProgress = f => Progress.set(f)) {
   for (let i = 0; i < ops.length; i += 400) { // a batch holds at most 500 writes
     const batch = db.batch();
     ops.slice(i, i + 400).forEach(op => op(batch));
     await batch.commit();
+    onProgress(Math.min(ops.length, i + 400) / ops.length);
   }
 }
 
@@ -155,8 +247,9 @@ function applyChanges(raw, changes) {
 // Writes the touched chunks. Each chunk is re-read inside a transaction and only the changed books are
 // applied to it, so a second librarian's edits to other books in the same chunk are never overwritten.
 // touched: Map<chunkId, { c, b: Map<bookId, doc|undefined>, r: Map<bookId, list|undefined> }>
-async function commitTouched(db, touched) {
+async function commitTouched(db, touched, onProgress = f => Progress.set(f)) {
   const all = [...touched.values()];
+  onProgress(0);
   for (let i = 0; i < all.length; i += TX_CHUNKS) {
     const group = all.slice(i, i + TX_CHUNKS);
     await db.runTransaction(async tx => {
@@ -177,6 +270,7 @@ async function commitTouched(db, touched) {
         tx.set(x.rRef, { data: rTxt });
       });
     });
+    onProgress(Math.min(all.length, i + TX_CHUNKS) / all.length);
   }
 }
 
@@ -286,7 +380,7 @@ async function loadBooks() {
 
 // Save several books (create or update) in one go. Librarian only.
 // Each book stays in its chunk if it still fits; otherwise the whole book moves to the first chunk with room.
-async function saveBookList(list) {
+async function saveBookList(list, onProgress = f => Progress.set(f)) {
   if (!list.length) return;
   const { db } = await firebaseReady;
   const st = await getStore();
@@ -303,7 +397,7 @@ async function saveBookList(list) {
       t.b.set(p.id, p.doc);
       t.r.set(p.id, p.list);
     }
-    await commitTouched(db, touched);
+    await commitTouched(db, touched, onProgress);
   } catch (e) {
     store = null; // the cache may be out of date: reload on next use
     throw e;
@@ -446,7 +540,10 @@ async function saveSchoolName(name) {
 // new barcodes added; barcodes already in the library are skipped. Returns { added, updated, skipped }.
 // All changed books are written together: only the affected chunk documents are written (2 writes per chunk).
 async function importBooksFromExcel(file) {
+  Progress.set(0.02, "Đang đọc file Excel...");
   if (!window.XLSX) await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+  Progress.set(0.05, "Đang đọc file Excel...");
+  await nextFrame();
   const sheet = XLSX.read(await file.arrayBuffer()).Sheets;
   const rows = XLSX.utils.sheet_to_json(sheet[Object.keys(sheet)[0]], { header: 1, defval: "" });
 
@@ -459,13 +556,20 @@ async function importBooksFromExcel(file) {
   const cReg = col("kí hiệu xếp giá"), cAuthor = col("tác giả"), cPub = col("nhà xb"), cYear = col("năm xb"), cCat = col("phân loại");
   const cell = (r, i) => i < 0 ? "" : String(r[i]).replace(/\s+/g, " ").trim().normalize("NFC");
 
+  Progress.set(0.1, "Đang tải danh sách sách hiện có...");
   const books = await loadBooks();
   const byTitle = new Map(books.map(b => [norm(b.name), b]));
   const known = new Set(books.flatMap(b => b.barcodes));
   const changed = new Set();
   let added = 0, updated = 0, skipped = 0;
 
-  for (const r of rows.slice(h + 1)) {
+  const dataRows = rows.slice(h + 1);
+  for (let n = 0; n < dataRows.length; n++) {
+    if (n % 200 === 0) {
+      Progress.set(0.15 + 0.25 * (n / dataRows.length), "Đang xử lý dòng " + n + " / " + dataRows.length + "...");
+      await nextFrame();
+    }
+    const r = dataRows[n];
     const code = String(r[cCode]).trim();
     const title = String(r[cTitle]).replace(/\s+/g, " ").trim().normalize("NFC");
     if (!code || !title) continue;
@@ -490,7 +594,9 @@ async function importBooksFromExcel(file) {
   }
 
   // Changed books are placed first-fit into the chunks and written once per chunk.
-  await saveBookList([...changed]);
+  Progress.set(0.4, "Đang lưu " + changed.size + " sách...");
+  await saveBookList([...changed], f => Progress.set(0.4 + 0.6 * f, "Đang lưu " + changed.size + " sách..."));
+  Progress.set(1, "Hoàn tất");
   return { added, updated: updated, skipped };
 }
 

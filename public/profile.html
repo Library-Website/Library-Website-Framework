@@ -110,18 +110,20 @@
 
     document.getElementById("school-form").addEventListener("submit", async e => {
       e.preventDefault();
-      const name = nameInput.value.trim().normalize("NFC");
-      if (!name) return;
-      try {
-        await saveSchoolName(name);
-      } catch (err) {
-        alert("Không lưu được: " + err.message);
-        return;
-      }
-      nameInput.value = name;
-      document.title = "Hồ sơ - " + name;
-      savedEl.classList.remove("d-none");
-      setTimeout(() => savedEl.classList.add("d-none"), 2500);
+      await runExclusive(async () => {
+        const name = nameInput.value.trim().normalize("NFC");
+        if (!name) return;
+        try {
+          await saveSchoolName(name);
+        } catch (err) {
+          alert("Không lưu được: " + err.message);
+          return;
+        }
+        nameInput.value = name;
+        document.title = "Hồ sơ - " + name;
+        savedEl.classList.remove("d-none");
+        setTimeout(() => savedEl.classList.add("d-none"), 2500);
+      }, { label: "Đang lưu tên trường..." });
     });
 
     // ---- Librarian accounts ----
@@ -159,38 +161,39 @@
     libListEl.addEventListener("click", async e => {
       const btn = e.target.closest("button[data-uid]");
       if (!btn) return;
-      if (!confirm("Xóa quyền của " + btn.dataset.email + "?")) return;
-      try {
-        await removeLibrarian(btn.dataset.uid);
-        await renderLibrarians();
-        libMessage("Đã xóa.", true);
-      } catch (err) {
-        libMessage("Không xóa được: " + err.message, false);
-      }
+      await runExclusive(async () => {
+        if (!confirm("Xóa quyền của " + btn.dataset.email + "?")) return;
+        try {
+          await removeLibrarian(btn.dataset.uid);
+          await renderLibrarians();
+          libMessage("Đã xóa.", true);
+        } catch (err) {
+          libMessage("Không xóa được: " + err.message, false);
+        }
+      }, { label: "Đang xóa thủ thư..." });
     });
 
     document.getElementById("librarian-form").addEventListener("submit", async e => {
       e.preventDefault();
       const email = document.getElementById("lib-email").value.trim();
       const pass = document.getElementById("lib-pass").value;
-      const addBtn = document.getElementById("lib-add");
-      addBtn.disabled = true;
-      libMessage("Đang thêm...", true);
-      try {
-        await addLibrarian(email, pass);
-        document.getElementById("librarian-form").reset();
-        await renderLibrarians();
-        libMessage("Đã thêm " + email + ". Hãy gửi mật khẩu cho người đó.", true);
-      } catch (err) {
-        const known = {
-          "auth/weak-password": "Mật khẩu quá yếu (ít nhất 6 ký tự).",
-          "auth/invalid-email": "Email không hợp lệ.",
-          "auth/invalid-credential": "Email này đã có tài khoản với mật khẩu khác.",
-          "auth/wrong-password": "Email này đã có tài khoản với mật khẩu khác."
-        };
-        libMessage(known[err.code] || ("Không thêm được: " + err.message), false);
-      }
-      addBtn.disabled = false;
+      await runExclusive(async () => {
+        libMessage("Đang thêm...", true);
+        try {
+          await addLibrarian(email, pass);
+          document.getElementById("librarian-form").reset();
+          await renderLibrarians();
+          libMessage("Đã thêm " + email + ". Hãy gửi mật khẩu cho người đó.", true);
+        } catch (err) {
+          const known = {
+            "auth/weak-password": "Mật khẩu quá yếu (ít nhất 6 ký tự).",
+            "auth/invalid-email": "Email không hợp lệ.",
+            "auth/invalid-credential": "Email này đã có tài khoản với mật khẩu khác.",
+            "auth/wrong-password": "Email này đã có tài khoản với mật khẩu khác."
+          };
+          libMessage(known[err.code] || ("Không thêm được: " + err.message), false);
+        }
+      }, { label: "Đang thêm thủ thư...", button: document.getElementById("lib-add") });
     });
 
     // ---- Change my password ----
@@ -208,23 +211,22 @@
       if (newPass !== newPass2) return pwMessage("Hai mật khẩu mới không giống nhau.", false);
       if (newPass === oldPass) return pwMessage("Mật khẩu mới phải khác mật khẩu cũ.", false);
 
-      const btn = document.getElementById("pw-btn");
-      btn.disabled = true;
-      pwMessage("Đang đổi...", true);
-      try {
-        await changeMyPassword(oldPass, newPass);
-        document.getElementById("password-form").reset();
-        pwMessage("Đã đổi mật khẩu.", true);
-      } catch (err) {
-        const known = {
-          "auth/wrong-password": "Mật khẩu hiện tại không đúng.",
-          "auth/invalid-credential": "Mật khẩu hiện tại không đúng.",
-          "auth/weak-password": "Mật khẩu mới quá yếu (ít nhất 6 ký tự).",
-          "auth/too-many-requests": "Thử sai quá nhiều lần. Hãy đợi vài phút rồi thử lại."
-        };
-        pwMessage(known[err.code] || ("Không đổi được: " + err.message), false);
-      }
-      btn.disabled = false;
+      await runExclusive(async () => {
+        pwMessage("Đang đổi...", true);
+        try {
+          await changeMyPassword(oldPass, newPass);
+          document.getElementById("password-form").reset();
+          pwMessage("Đã đổi mật khẩu.", true);
+        } catch (err) {
+          const known = {
+            "auth/wrong-password": "Mật khẩu hiện tại không đúng.",
+            "auth/invalid-credential": "Mật khẩu hiện tại không đúng.",
+            "auth/weak-password": "Mật khẩu mới quá yếu (ít nhất 6 ký tự).",
+            "auth/too-many-requests": "Thử sai quá nhiều lần. Hãy đợi vài phút rồi thử lại."
+          };
+          pwMessage(known[err.code] || ("Không đổi được: " + err.message), false);
+        }
+      }, { label: "Đang đổi mật khẩu...", button: document.getElementById("pw-btn") });
     });
   </script>
 </body>

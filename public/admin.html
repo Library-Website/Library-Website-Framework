@@ -213,12 +213,14 @@
         e.preventDefault();
         const email = document.getElementById("login-user").value.trim();
         const pass = document.getElementById("login-pass").value;
-        try {
-          await auth.signInWithEmailAndPassword(email, pass);
-          document.getElementById("login-error").classList.add("d-none");
-        } catch (err) {
-          document.getElementById("login-error").classList.remove("d-none");
-        }
+        await runExclusive(async () => {
+          try {
+            await auth.signInWithEmailAndPassword(email, pass);
+            document.getElementById("login-error").classList.add("d-none");
+          } catch (err) {
+            document.getElementById("login-error").classList.remove("d-none");
+          }
+        }, { label: "Đang đăng nhập..." });
       });
 
       document.getElementById("logout-btn").addEventListener("click", () => auth.signOut());
@@ -271,13 +273,19 @@
       const file = importFile.files[0];
       importFile.value = "";
       if (!file) return;
-      try {
-        const r = await importBooksFromExcel(file);
-        alert(`Xong: thêm ${r.added} sách mới, cập nhật ${r.updated} sách, bỏ qua ${r.skipped} mã vạch đã có.`);
-        refresh();
-      } catch (err) {
-        alert("Không nhập được: " + err.message);
-      }
+      let ok = false;
+      await runExclusive(async () => {
+        try {
+          const r = await importBooksFromExcel(file);
+          Progress.end(); // hide the bar before the message
+          alert(`Xong: thêm ${r.added} sách mới, cập nhật ${r.updated} sách, bỏ qua ${r.skipped} mã vạch đã có.`);
+          ok = true;
+        } catch (err) {
+          Progress.end();
+          alert("Không nhập được: " + err.message);
+        }
+      }, { label: "Đang nhập từ Excel..." });
+      if (ok) refresh();
     });
 
     // ---------- Add (manual): one copy per submission ----------
@@ -288,6 +296,7 @@
 
     document.getElementById("add-form").addEventListener("submit", async e => {
       e.preventDefault();
+      await runExclusive(async () => {
       const clean = id => document.getElementById(id).value.replace(/\s+/g, " ").trim().normalize("NFC");
       const code = clean("a-barcode");
       const title = clean("a-title");
@@ -335,6 +344,7 @@
       } finally {
         if (submitBtn) submitBtn.disabled = false;
       }
+      }, { label: "Đang thêm sách..." });
     });
 
     // ---------- Edit form ----------
@@ -472,6 +482,7 @@
 
     document.getElementById("book-form").addEventListener("submit", async e => {
       e.preventDefault();
+      await runExclusive(async () => {
       const name = document.getElementById("f-name").value.trim();
       if (!name) return;
 
@@ -537,20 +548,23 @@
       books.sort((a, b) => a.name.localeCompare(b.name, "vi"));
       renderList();
       modal.hide();
+      }, { label: "Đang lưu sách..." });
     });
 
     document.getElementById("delete-btn").addEventListener("click", async () => {
-      if (!editingId) return;
-      if (!confirm("Xóa sách này?")) return;
-      try {
-        await deleteBook(editingId);
-      } catch (err) {
-        alert("Không xóa được: " + err.message);
-        return;
-      }
-      books = books.filter(b => b.id !== editingId);
-      renderList();
-      modal.hide();
+      await runExclusive(async () => {
+        if (!editingId) return;
+        if (!confirm("Xóa sách này?")) return;
+        try {
+          await deleteBook(editingId);
+        } catch (err) {
+          alert("Không xóa được: " + err.message);
+          return;
+        }
+        books = books.filter(b => b.id !== editingId);
+        renderList();
+        modal.hide();
+      }, { label: "Đang xóa sách..." });
     });
 
   </script>
