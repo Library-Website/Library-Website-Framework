@@ -79,13 +79,62 @@
 
     searchEl.addEventListener("input", applySearch);
 
-    (async function init() {
-      const schoolName = await loadSchoolName();
-      document.title = schoolName;
-      document.getElementById("school-name").textContent = schoolName;
-      allBooks = await loadBooks();
+    // ---- Local cache (this browser only) ----
+    // Only the public part is saved: name and copies left. Never borrowers or student names.
+    // The saved copy is shown at once; fresh data is always fetched too and replaces it when it arrives.
+    const CACHE_KEY = "library-cache-v1";
+    const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // older than 7 days: ignored
+
+    function readCache() {
+      try {
+        const c = JSON.parse(localStorage.getItem(CACHE_KEY));
+        if (c && Array.isArray(c.books) && Date.now() - c.time < CACHE_MAX_AGE) return c;
+      } catch (e) {}
+      return null;
+    }
+
+    function writeCache(schoolName, books) {
+      try {
+        const old = readCache() || {};
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          time: Date.now(),
+          schoolName: schoolName !== undefined ? schoolName : old.schoolName,
+          books: books !== undefined ? books.map(b => ({ id: b.id, name: b.name, copies: b.copies })) : (old.books || [])
+        }));
+      } catch (e) { /* storage full or blocked: the page still works without a cache */ }
+    }
+
+    function showSchoolName(name) {
+      document.title = name;
+      document.getElementById("school-name").textContent = name;
+    }
+
+    // 1) Show the saved copy immediately (if there is one and it is not too old).
+    const cached = readCache();
+    let shownJson = null;
+    if (cached) {
+      if (cached.schoolName) showSchoolName(cached.schoolName);
+      allBooks = cached.books;
+      shownJson = JSON.stringify(cached.books);
       applySearch();
-    })();
+    }
+
+    // 2) Always fetch fresh data. The school name and the books load at the same time.
+    loadSchoolName().then(schoolName => {
+      if (schoolNameLoadFailed) return; // keep the saved name instead of the default
+      showSchoolName(schoolName);
+      writeCache(schoolName, undefined);
+    });
+    loadBooks().then(books => {
+      if (booksLoadFailed) return; // offline or error: keep whatever is on screen
+      const slim = books.map(b => ({ id: b.id, name: b.name, copies: b.copies }));
+      const json = JSON.stringify(slim);
+      writeCache(undefined, slim);
+      if (json !== shownJson) { // redraw only if something really changed
+        allBooks = slim;
+        applySearch();
+      }
+    });
   </script>
 </body>
 </html>
