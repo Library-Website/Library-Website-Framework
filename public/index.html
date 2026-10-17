@@ -79,13 +79,15 @@
 
     searchEl.addEventListener("input", applySearch);
 
-    (async function init() {
-      const schoolName = await loadSchoolName();
+    // The school name and the books load at the same time; each one appears as soon as it arrives.
+    loadSchoolName().then(schoolName => {
       document.title = schoolName;
       document.getElementById("school-name").textContent = schoolName;
-      allBooks = await loadBooks();
+    });
+    loadBooks().then(books => {
+      allBooks = books;
       applySearch();
-    })();
+    });
   </script>
 </body>
 </html>

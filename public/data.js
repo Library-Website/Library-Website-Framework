@@ -134,14 +134,28 @@ function loadScript(src) {
   });
 }
 
-// Loads the Firebase SDK, then the project's config from Hosting. Resolves to { db, auth }.
+// Downloads all scripts at the same time but runs them in the given order (async = false keeps the order).
+// Resolves when every script has loaded.
+function loadScriptsInOrder(srcs) {
+  return Promise.all(srcs.map(src => new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = false;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("Could not load " + src));
+    document.head.appendChild(s);
+  })));
+}
+
+// Loads the Firebase SDK and the project's config from Hosting. Resolves to { db, auth }.
+// All four files download in parallel (app must run first, so the order is kept).
 const firebaseReady = (async () => {
-  await loadScript(FIREBASE_SDK + "firebase-app-compat.js");
-  await Promise.all([
-    loadScript(FIREBASE_SDK + "firebase-firestore-compat.js"),
-    loadScript(FIREBASE_SDK + "firebase-auth-compat.js")
+  await loadScriptsInOrder([
+    FIREBASE_SDK + "firebase-app-compat.js",
+    FIREBASE_SDK + "firebase-firestore-compat.js",
+    FIREBASE_SDK + "firebase-auth-compat.js",
+    "/__/firebase/init.js"
   ]);
-  await loadScript("/__/firebase/init.js");
   return { db: firebase.firestore(), auth: firebase.auth() };
 })();
 
@@ -321,14 +335,20 @@ const toBook = (id, d, borrowers) => ({
 async function loadBooks() {
   try {
     const { db } = await firebaseReady;
+    // The public books are downloaded while we wait for the saved login to be restored,
+    // and the borrowers (librarian only) are downloaded while the books are still arriving.
+    const booksReq = db.collection("books").get(); // 1 read per chunk
+    booksReq.catch(() => {}); // errors are handled where it is awaited below
     const user = await getCurrentUser();
+    const borrowersReq = user ? db.collection("borrowers").get() : null;
+    if (borrowersReq) borrowersReq.catch(() => {});
 
-    const snap = await db.collection("books").get(); // 1 read per chunk
+    const snap = await booksReq;
     const borrowerData = new Map();
     let hasBorrowers = false;
-    if (user) {
+    if (borrowersReq) {
       try {
-        const bsnap = await db.collection("borrowers").get();
+        const bsnap = await borrowersReq;
         bsnap.forEach(d => borrowerData.set(d.id, d.data()));
         hasBorrowers = true;
       } catch (e) {

@@ -228,10 +228,11 @@
 
     // ---------- Book list ----------
     async function refresh() {
-      const schoolName = await loadSchoolName();
+      // School name and books are loaded at the same time.
+      const [schoolName, loaded] = await Promise.all([loadSchoolName(), loadBooks()]);
       document.title = "Quản trị - " + schoolName;
       document.getElementById("school-name").textContent = schoolName;
-      books = await loadBooks();
+      books = loaded;
       renderList();
     }
 
