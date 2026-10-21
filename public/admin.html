@@ -60,6 +60,7 @@
         <h2 class="h5 mb-0">Danh sách sách</h2>
         <div class="d-flex gap-2">
           <button id="import-btn" class="btn btn-outline-primary">Nhập từ Excel</button>
+          <button id="export-btn" class="btn btn-outline-success">Tải Excel</button>
           <button id="add-btn" class="btn btn-primary">+ Thêm sách</button>
         </div>
         <input id="import-file" type="file" accept=".xlsx,.xls" class="d-none">
@@ -287,6 +288,22 @@
         }
       }, { label: "Đang nhập từ Excel..." });
       if (ok) refresh();
+    });
+
+    // ---------- Excel export ----------
+    document.getElementById("export-btn").addEventListener("click", async () => {
+      await runExclusive(async () => {
+        try {
+          const r = await exportBooksToExcel();
+          Progress.end(); // hide the bar before the message
+          let msg = `Đã tải file Excel: ${r.copies} bản sách, ${r.borrowers} lượt đang mượn.`;
+          if (r.skippedBooks) msg += `\n${r.skippedBooks} sách cũ chưa có mã vạch nên không có trong file.`;
+          alert(msg);
+        } catch (err) {
+          Progress.end();
+          alert("Không tải được: " + err.message);
+        }
+      }, { label: "Đang tạo file Excel..." });
     });
 
     // ---------- Add (manual): one copy per submission ----------

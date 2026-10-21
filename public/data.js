@@ -629,6 +629,74 @@ async function importBooksFromExcel(file) {
   return { added, updated: updated, skipped };
 }
 
+// Downloads the whole library as an .xlsx file. Librarian only (it includes who borrowed what).
+// Sheet 1 "Sách": one row per copy (per barcode), with the same column names the import reads
+// ("Mã vạch", "Tựa đề", "Kí hiệu xếp giá", "Tác giả", "Nhà XB", "Năm XB", "Phân loại"), so the file can be
+// imported again unchanged. Extra columns on the right (Tình trạng, Người mượn, ...) are ignored by the import.
+// Sheet 2 "Đang mượn": every current borrower, including those saved without a barcode.
+// Old books that have no barcodes have no individual copies, so they cannot be listed per copy; they are
+// counted in the result. Returns { copies, borrowers, skippedBooks }.
+async function exportBooksToExcel() {
+  Progress.set(0.05, "Đang tải danh sách sách...");
+  if (!window.XLSX) await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+  const books = await loadBooks();
+  if (booksLoadFailed) throw new Error("Không tải được dữ liệu. Hãy kiểm tra mạng và thử lại.");
+  if (!(store && store.hasBorrowers)) throw new Error("Chỉ thủ thư đã đăng nhập mới tải được.");
+
+  Progress.set(0.4, "Đang tạo file Excel...");
+  await nextFrame();
+  const copyRows = [], borrowerRows = [];
+  let skippedBooks = 0;
+
+  books.forEach((b, n) => {
+    if (n % 500 === 0) Progress.set(0.4 + 0.4 * (n / books.length));
+    const byCode = new Map((b.borrowers || []).map(br => [String(br.barcode || "").trim(), br]).filter(([c]) => c));
+    if (!b.barcodes.length) skippedBooks++;
+    for (const code of b.barcodes) {
+      const d = (b.details || {})[code] || {};
+      const br = byCode.get(code);
+      copyRows.push({
+        "Mã vạch": String(code),
+        "Tựa đề": b.name,
+        "Kí hiệu xếp giá": d.reg || "",
+        "Tác giả": d.author || "",
+        "Nhà XB": d.publisher || "",
+        "Năm XB": d.year || "",
+        "Phân loại": d.category || "",
+        "Tình trạng": br ? "Đang mượn" : "Còn",
+        "Người mượn": br ? br.name : "",
+        "Lớp": br ? br.class : "",
+        "Ngày mượn": br ? br.borrowed || "" : "",
+        "Hạn trả": br ? br.due || "" : ""
+      });
+    }
+    for (const br of b.borrowers || []) {
+      borrowerRows.push({
+        "Họ tên": br.name || "", "Lớp": br.class || "", "Tựa đề": b.name, "Mã vạch": String(br.barcode || ""),
+        "Ngày mượn": br.borrowed || "", "Hạn trả": br.due || ""
+      });
+    }
+  });
+
+  const copyHeader = ["Mã vạch", "Tựa đề", "Kí hiệu xếp giá", "Tác giả", "Nhà XB", "Năm XB", "Phân loại", "Tình trạng", "Người mượn", "Lớp", "Ngày mượn", "Hạn trả"];
+  const borrowerHeader = ["Họ tên", "Lớp", "Tựa đề", "Mã vạch", "Ngày mượn", "Hạn trả"];
+  const s1 = XLSX.utils.json_to_sheet(copyRows, { header: copyHeader });
+  s1["!cols"] = [14, 40, 16, 22, 22, 9, 10, 12, 22, 8, 12, 12].map(wch => ({ wch }));
+  const s2 = XLSX.utils.json_to_sheet(borrowerRows, { header: borrowerHeader });
+  s2["!cols"] = [22, 8, 40, 14, 12, 12].map(wch => ({ wch }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, s1, "Sách");
+  XLSX.utils.book_append_sheet(wb, s2, "Đang mượn");
+
+  Progress.set(0.9, "Đang tạo file tải về...");
+  await nextFrame();
+  // The download works by clicking a hidden link, and the page ignores every click while Progress is busy
+  // (see the capture listener above), so the progress must end BEFORE the file is written.
+  Progress.end();
+  XLSX.writeFile(wb, "thu-vien-" + todayStr() + ".xlsx");
+  return { copies: copyRows.length, borrowers: borrowerRows.length, skippedBooks };
+}
+
 // Today's date as YYYY-MM-DD in the local time zone (toISOString would use UTC and can be off by a day).
 function todayStr() {
   const d = new Date();
