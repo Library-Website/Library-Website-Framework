@@ -77,6 +77,7 @@
       </div>
       <div id="book-list" class="d-flex flex-column gap-2"></div>
       <p id="empty" class="text-center text-muted mt-4 d-none">Chưa có sách nào.</p>
+      <nav id="pager" class="mt-4" aria-label="Chuyển trang"></nav>
     </main>
   </div>
 
@@ -206,7 +207,9 @@
     const copiesPanel = document.getElementById("copies-panel");
     const copiesBody = document.getElementById("copies-body");
 
+    const pagerEl = document.getElementById("pager");
     let books = [];
+    let currentPage = 1;
     let editingId = null;
     // Working copy of the copies of the book being edited; only saved when the librarian presses "Lưu".
     let draft = { barcodes: [], details: {}, legacyCopies: 0 };
@@ -215,8 +218,9 @@
 
     // Search box and category filter (see categories.js): redraw the list when either one changes.
     fillCategoryOptions(categoryEl);
-    adminSearchEl.addEventListener("input", () => renderList());
-    categoryEl.addEventListener("change", () => renderList());
+    // A new search or category goes back to page 1. Saving/deleting a book keeps the current page.
+    adminSearchEl.addEventListener("input", () => { currentPage = 1; renderList(); });
+    categoryEl.addEventListener("change", () => { currentPage = 1; renderList(); });
 
     // ---------- Login ----------
     function showView(loggedIn) {
@@ -261,7 +265,15 @@
     }
 
     function renderList() {
-      const shown = filterBooks(books, adminSearchEl.value, categoryEl.value);
+      const matches = filterBooks(books, adminSearchEl.value, categoryEl.value);
+      const pg = paginate(matches, currentPage);
+      currentPage = pg.page; // may have been moved back to the last page (e.g. after deleting a book)
+      const shown = pg.items;
+      renderPager(pagerEl, pg.page, pg.totalPages, n => {
+        currentPage = n;
+        renderList();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
       listEl.innerHTML = shown.map(b => {
         const left = copiesLeft(b);
         const badge = left > 0

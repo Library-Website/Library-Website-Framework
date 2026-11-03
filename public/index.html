@@ -37,6 +37,7 @@
   <main class="container pb-5">
     <div id="book-list" class="row g-3"></div>
     <p id="empty" class="text-center text-muted mt-4 d-none">Không tìm thấy sách.</p>
+    <nav id="pager" class="mt-4" aria-label="Chuyển trang"></nav>
   </main>
 
   <script src="data.js"></script>
@@ -46,7 +47,9 @@
     const emptyEl = document.getElementById("empty");
     const searchEl = document.getElementById("search");
     const categoryEl = document.getElementById("category-filter");
+    const pagerEl = document.getElementById("pager");
     let allBooks = [];
+    let currentPage = 1;
 
     fillCategoryOptions(categoryEl);
 
@@ -91,15 +94,26 @@
       emptyEl.classList.toggle("d-none", books.length > 0);
     }
 
-    function applySearch() {
+    // Filter, cut out the current page, draw it and the page buttons.
+    // A new search or category should call applySearch(true) to go back to page 1.
+    function applySearch(resetPage) {
+      if (resetPage === true) currentPage = 1;
       const q = normalize(searchEl.value.trim());
       const cat = categoryEl.value;
-      render(allBooks.filter(b =>
-        normalize(b.name).includes(q) && (!cat || (b.cats || []).includes(cat))));
+      const matches = allBooks.filter(b =>
+        normalize(b.name).includes(q) && (!cat || (b.cats || []).includes(cat)));
+      const pg = paginate(matches, currentPage);
+      currentPage = pg.page; // may have been moved back to the last page
+      render(pg.items);
+      renderPager(pagerEl, pg.page, pg.totalPages, n => {
+        currentPage = n;
+        applySearch();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
     }
 
-    searchEl.addEventListener("input", applySearch);
-    categoryEl.addEventListener("change", applySearch);
+    searchEl.addEventListener("input", () => applySearch(true));
+    categoryEl.addEventListener("change", () => applySearch(true));
 
     // ---- Local cache (this browser only) ----
     // Only the public part is saved: name, copies left and category codes. Never borrowers or student names.

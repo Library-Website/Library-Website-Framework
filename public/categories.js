@@ -72,6 +72,74 @@ function hasCategory(book, code) {
     categoryKey(((book.details || {})[bc] || {}).category) === code);
 }
 
+// ---------- Phân trang (dùng chung cho index.html và admin.html) ----------
+const PAGE_SIZE = 12;
+
+// Cắt danh sách thành từng trang. Trang quá lớn (ví dụ vừa xóa sách) sẽ tự lùi về trang cuối.
+// Trả về { items, page, totalPages }.
+function paginate(list, page, size = PAGE_SIZE) {
+  const totalPages = Math.max(1, Math.ceil(list.length / size));
+  const p = Math.min(Math.max(1, page | 0), totalPages);
+  return { items: list.slice((p - 1) * size, p * size), page: p, totalPages };
+}
+
+// Vẽ nút chuyển trang vào thẻ navEl: « Trước, 1 … 4 5 6 … 20, Sau ».
+// Hiện tối đa 5 số: trang đầu, trang cuối và trang hiện tại cùng 2 trang kề bên, để vừa màn hình điện thoại. Chỉ có 1 trang thì ẩn nút.
+// Bấm vào dấu … để gõ số trang rồi nhấn Enter (Esc hoặc bấm ra ngoài để hủy).
+// onChange(số trang mới) được gọi khi bấm.
+function renderPager(navEl, page, totalPages, onChange) {
+  if (totalPages <= 1) { navEl.innerHTML = ""; return; }
+
+  const nums = new Set([1, totalPages]);
+  for (let i = page - 1; i <= page + 1; i++) if (i >= 1 && i <= totalPages) nums.add(i);
+  const sorted = [...nums].sort((a, b) => a - b);
+
+  const item = (label, target, cls = "") =>
+    `<li class="page-item ${cls}"><button type="button" class="page-link" data-page="${target}">${label}</button></li>`;
+
+  let html = item("&laquo; Trước", page - 1, page === 1 ? "disabled" : "");
+  let last = 0;
+  for (const n of sorted) {
+    if (n - last > 1) html += '<li class="page-item"><button type="button" class="page-link" data-jump title="Nhập số trang">…</button></li>';
+    html += item(n, n, n === page ? "active" : "");
+    last = n;
+  }
+  html += item("Sau &raquo;", page + 1, page === totalPages ? "disabled" : "");
+
+  navEl.innerHTML = `<ul class="pagination pagination-sm justify-content-center flex-wrap mb-0">${html}</ul>`;
+  navEl.onclick = e => {
+    const jump = e.target.closest("button[data-jump]");
+    if (jump) {
+      showJumpInput(jump.closest("li"), totalPages, onChange, () => renderPager(navEl, page, totalPages, onChange));
+      return;
+    }
+    const btn = e.target.closest("button[data-page]");
+    if (!btn || btn.closest(".disabled")) return;
+    onChange(Number(btn.dataset.page));
+  };
+}
+
+// Biến dấu … thành ô nhập số trang. Enter = đi tới trang đó (số quá lớn thì lấy trang cuối);
+// Esc, bỏ trống hoặc bấm ra ngoài = hủy và vẽ lại các nút như cũ.
+function showJumpInput(li, totalPages, onChange, restore) {
+  li.innerHTML = `<input type="number" class="form-control form-control-sm" min="1" max="${totalPages}" ` +
+    `placeholder="1-${totalPages}" aria-label="Nhập số trang" style="width:5.5rem">`;
+  const input = li.firstChild;
+  input.focus();
+  let done = false;
+  const finish = go => {
+    if (done) return; // tránh chạy hai lần (Enter rồi blur)
+    done = true;
+    const n = parseInt(input.value, 10);
+    if (go && n >= 1) onChange(Math.min(n, totalPages)); else restore();
+  };
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(false));
+}
+
 // Lọc theo tên (query) và thể loại (cat). cat rỗng = tất cả.
 function filterBooks(books, query, cat) {
   const q = normalizeText(String(query).trim());
