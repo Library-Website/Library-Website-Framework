@@ -29,6 +29,9 @@
   <div class="search-wrap">
     <input id="search" type="search" class="form-control form-control-lg"
            placeholder="Tìm sách theo tên..." autocomplete="off">
+    <select id="category-filter" class="form-select mt-2">
+      <option value="">Tất cả thể loại</option>
+    </select>
   </div>
 
   <main class="container pb-5">
@@ -37,17 +40,33 @@
   </main>
 
   <script src="data.js"></script>
+  <script src="categories.js"></script>
   <script>
     const listEl = document.getElementById("book-list");
     const emptyEl = document.getElementById("empty");
     const searchEl = document.getElementById("search");
+    const categoryEl = document.getElementById("category-filter");
     let allBooks = [];
+
+    fillCategoryOptions(categoryEl);
 
     // Lowercase and strip Vietnamese accents so "de men" finds "Dế Mèn".
     function normalize(s) {
       return s.toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
         .replace(/đ/g, "d");
+    }
+
+    // The category codes of a book (one per kind of copy), e.g. ["895", "800"].
+    // Saved with the book so the filter also works from the local cache, which has no barcodes/details.
+    function bookCats(b) {
+      const codes = (b.barcodes || []).map(bc => categoryKey(((b.details || {})[bc] || {}).category));
+      return [...new Set(codes.filter(Boolean))];
+    }
+
+    // The small public version of a book that is shown and cached: name, copies left and categories.
+    function slimBook(b) {
+      return { id: b.id, name: b.name, copies: b.copies, cats: b.cats || bookCats(b) };
     }
 
     function render(books) {
@@ -74,15 +93,18 @@
 
     function applySearch() {
       const q = normalize(searchEl.value.trim());
-      render(allBooks.filter(b => normalize(b.name).includes(q)));
+      const cat = categoryEl.value;
+      render(allBooks.filter(b =>
+        normalize(b.name).includes(q) && (!cat || (b.cats || []).includes(cat))));
     }
 
     searchEl.addEventListener("input", applySearch);
+    categoryEl.addEventListener("change", applySearch);
 
     // ---- Local cache (this browser only) ----
-    // Only the public part is saved: name and copies left. Never borrowers or student names.
+    // Only the public part is saved: name, copies left and category codes. Never borrowers or student names.
     // The saved copy is shown at once; fresh data is always fetched too and replaces it when it arrives.
-    const CACHE_KEY = "library-cache-v1";
+    const CACHE_KEY = "library-cache-v2"; // v2: books now also carry their category codes
     const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // older than 7 days: ignored
 
     function readCache() {
@@ -99,7 +121,7 @@
         localStorage.setItem(CACHE_KEY, JSON.stringify({
           time: Date.now(),
           schoolName: schoolName !== undefined ? schoolName : old.schoolName,
-          books: books !== undefined ? books.map(b => ({ id: b.id, name: b.name, copies: b.copies })) : (old.books || [])
+          books: books !== undefined ? books.map(slimBook) : (old.books || [])
         }));
       } catch (e) { /* storage full or blocked: the page still works without a cache */ }
     }
@@ -127,7 +149,7 @@
     });
     loadBooks().then(books => {
       if (booksLoadFailed) return; // offline or error: keep whatever is on screen
-      const slim = books.map(b => ({ id: b.id, name: b.name, copies: b.copies }));
+      const slim = books.map(slimBook);
       const json = JSON.stringify(slim);
       writeCache(undefined, slim);
       if (json !== shownJson) { // redraw only if something really changed
