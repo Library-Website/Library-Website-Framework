@@ -49,6 +49,31 @@ function fillCategoryOptions(selectEl) {
   });
 }
 
+// Tên thể loại của một mã 3 số, ví dụ "895" -> "TRUYỆN". Mã không có trong danh sách thì trả về chính mã đó.
+function categoryName(code) {
+  const c = CATEGORIES.find(c => c.code === code);
+  return c ? c.name : code;
+}
+
+// Các mã thể loại của một sách (mỗi loại bản sách một mã), ví dụ ["895", "800"].
+// Sách đã có sẵn b.cats (từ bộ nhớ đệm của trang công khai) thì dùng luôn.
+function bookCats(b) {
+  if (b.cats) return b.cats;
+  const codes = (b.barcodes || []).map(bc => categoryKey(((b.details || {})[bc] || {}).category));
+  return [...new Set(codes.filter(Boolean))];
+}
+
+// Các nhãn thể loại hiện dưới tên sách (tối đa 3, còn lại gộp thành "+n"). Mã không có trong danh sách hiện đúng mã đó.
+function categoryBadges(cats) {
+  if (!cats || !cats.length) return "";
+  const full = c => c + " - " + categoryName(c);
+  const chip = (text, title) =>
+    `<span class="badge text-bg-light border fw-normal" title="${escapeHtml(title)}">${escapeHtml(text)}</span>`;
+  const shown = cats.slice(0, 3).map(c => chip(categoryName(c), full(c)));
+  if (cats.length > 3) shown.push(chip("+" + (cats.length - 3), cats.slice(3).map(full).join(", ")));
+  return `<div class="d-flex flex-wrap gap-1">${shown.join("")}</div>`;
+}
+
 // Bỏ dấu tiếng Việt để "de men" tìm được "Dế Mèn".
 function normalizeText(s) {
   return String(s || "").toLowerCase()

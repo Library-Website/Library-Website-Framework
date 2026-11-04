@@ -60,13 +60,6 @@
         .replace(/đ/g, "d");
     }
 
-    // The category codes of a book (one per kind of copy), e.g. ["895", "800"].
-    // Saved with the book so the filter also works from the local cache, which has no barcodes/details.
-    function bookCats(b) {
-      const codes = (b.barcodes || []).map(bc => categoryKey(((b.details || {})[bc] || {}).category));
-      return [...new Set(codes.filter(Boolean))];
-    }
-
     // The small public version of a book that is shown and cached: name, copies left and categories.
     function slimBook(b) {
       return { id: b.id, name: b.name, copies: b.copies, cats: b.cats || bookCats(b) };
@@ -83,6 +76,7 @@
             <div class="card book-card">
               <div class="card-body d-flex flex-column gap-2">
                 <div class="book-title">${escapeHtml(b.name)}</div>
+                ${categoryBadges(b.cats)}
                 <div class="d-flex justify-content-between align-items-center mt-auto">
                   ${badge}
                   <span class="copies">Còn ${b.copies} cuốn</span>
