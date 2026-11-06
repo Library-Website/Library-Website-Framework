@@ -1,0 +1,25 @@
+/* Logo CLB Thư viện: mọi đường dẫn file logo nằm ở ĐÚNG MỘT chỗ này.
+   Muốn đổi logo: thay file trong thư mục img/ (giữ nguyên tên), hoặc sửa 2 dòng --logo-* bên dưới.
+   - Nền sáng  -> dùng logo đen   (--logo-on-light)
+   - Nền tối   -> dùng logo trắng (--logo-on-dark). Đặt class "on-dark" lên khối có nền tối (header xanh navy...). */
+:root {
+  --logo-on-light: url("img/logo-black.png");
+  --logo-on-dark: url("img/logo-white.png");
+}
+
+.logo {
+  display: block;
+  width: 150px;
+  height: 44px;                       /* chỉnh cỡ ở đây */
+  background: var(--logo-on-light) left center / contain no-repeat;
+  flex-shrink: 0;
+}
+.logo.logo-lg { width: 220px; height: 64px; }
+.logo.mx-auto { background-position: center; }  /* logo canh giữa */
+.on-dark .logo { background-image: var(--logo-on-dark); }
+
+/* Sau này muốn tự đổi theo chế độ tối của máy: bỏ chú thích khối dưới.
+@media (prefers-color-scheme: dark) {
+  .logo { background-image: var(--logo-on-dark); }
+}
+*/
